@@ -37,8 +37,9 @@ public class AdminController(
     IConfigService configService,
     IGameRepository gameRepository,
     ITeamRepository teamRepository,
-    IContainerRepository containerRepository,
     IServiceProvider serviceProvider,
+    IContainerRepository containerRepository,
+    IUserMetadataFieldRepository metadataRepository,
     IParticipationRepository participationRepository,
     IStringLocalizer<Program> localizer) : ControllerBase
 {
@@ -261,7 +262,7 @@ public class AdminController(
             }
 
             var teams = new List<Team>();
-            foreach (var (user, teamName) in users)
+            foreach ((UserInfo user, var teamName) in users)
             {
                 if (teamName is null)
                     continue;
@@ -389,7 +390,8 @@ public class AdminController(
     [HttpPut("Users/{userid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(RequestResponse), StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> UpdateUserInfo(string userid, [FromBody] AdminUserInfoModel model)
+    public async Task<IActionResult> UpdateUserInfo(string userid,
+        [FromBody] AdminUserInfoModel model, CancellationToken token)
     {
         var user = await userManager.FindByIdAsync(userid);
 
@@ -411,6 +413,14 @@ public class AdminController(
 
             if (!result.Succeeded)
                 return HandleIdentityError(result.Errors);
+        }
+
+        if (model.Metadata is { Count: > 0 })
+        {
+            var fieldDefs = await metadataRepository.GetAllAsync(token);
+            if (fieldDefs.Count > 0)
+                if (!user.UpdateUserMetadataByAdmin(model.Metadata, localizer, fieldDefs, out var errorResponse))
+                    return BadRequest(new RequestResponse(errorResponse));
         }
 
         user.UpdateUserInfo(model);
